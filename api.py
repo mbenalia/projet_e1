@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 import pandas as pd
 import os
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, date
 
 
 load_dotenv()
@@ -50,27 +50,41 @@ async def get_all_offres():
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/offres_date")
-async def get_all_offres(date_min: Optional[datetime] = None, api_key: str = Depends(get_api_key)):
+async def get_all_offres_date(
+    date_minimum: Optional[str] = Query(None),
+    api_key: str = Depends(get_api_key)
+):
     try:
+        # Parse date_minimum if provided
+        if date_minimum:
+            try:
+                date_minimum = datetime.strptime(date_minimum, "%Y-%m-%d").date()
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid date format. Use YYYY-MM-DD."
+                )
+
         with engine.connect() as conn:
-            # Requête de base
             base_query = """
-            SELECT offres.id_offre, offres.poste, offres.entreprise, offres.lieu,
-                   offres.description, offres.contrat, offres.date_publication, offres.siren,
-                   entreprises.nom_complet, entreprises.categorie_entreprise
-            FROM offres
-            LEFT JOIN entreprises ON offres.siren = entreprises.siren
+                SELECT offres.id_offre, offres.poste, offres.entreprise, offres.lieu,
+                       offres.description, offres.contrat, offres.date_publication, offres.siren,
+                       entreprises.nom_complet, entreprises.categorie_entreprise
+                FROM offres
+                LEFT JOIN entreprises ON offres.siren = entreprises.siren
             """
 
-            # Ajout dynamique du filtre sur la date
-            if date_min:
-                base_query += " WHERE offres.date_publication >= :date_min"
+            # Add a date filter if date_minimum is provided
+            if date_minimum:
+                base_query += " WHERE offres.date_publication >= :date_minimum"
 
-            # Exécution de la requête
-            result = conn.execute(text(base_query), {"date_min": date_min} if date_min else {})
+            result = conn.execute(
+                text(base_query),
+                {"date_minimum": date_minimum} if date_minimum else {}
+            )
 
-            # Transformation directe des résultats en JSON
-            offres = [dict(row) for row in result]
+            # Convert result to dictionaries
+            offres = [dict(row._mapping) for row in result]
             return offres
 
     except Exception as e:
